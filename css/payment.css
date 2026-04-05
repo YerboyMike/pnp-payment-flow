@@ -1,0 +1,569 @@
+/*
+ * Payment Modal & Overlay Styles
+ * Theme: Navy blue (#0D2849) + Gold (#CEBA4C)
+ * Matches existing PnP styling.
+ */
+
+/* Payment Overlay - covers the form until payment is made */
+.payment-overlay {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(13, 40, 73, 0.95);
+    border: 2px solid rgba(206, 186, 76, 0.5);
+    border-radius: 12px;
+    padding: 2rem;
+    margin-bottom: 1.5rem;
+    text-align: center;
+}
+
+.payment-overlay h2 {
+    color: #CEBA4C;
+    font-size: 1.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.payment-overlay .payment-subtitle {
+    color: #aaa;
+    font-size: 0.95rem;
+    margin-bottom: 1.5rem;
+}
+
+/* Payment Modal */
+.payment-modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+}
+
+.payment-modal-content {
+    background: #0D2849;
+    border: 2px solid rgba(206, 186, 76, 0.6);
+    border-radius: 12px;
+    max-width: 560px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    padding: 2rem;
+    position: relative;
+}
+
+.payment-modal-close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+    line-height: 1;
+}
+
+.payment-modal-close:hover {
+    color: #fff;
+}
+
+.payment-modal-header {
+    text-align: center;
+    margin-bottom: 1.5rem;
+}
+
+.payment-modal-header h2 {
+    color: #CEBA4C;
+    font-size: 1.4rem;
+    margin-bottom: 0.25rem;
+}
+
+.payment-tool-name {
+    color: #fff;
+    font-size: 1rem;
+}
+
+.promo-banner {
+    background: linear-gradient(135deg, #1B5E20, #2E7D32);
+    color: #fff;
+    text-align: center;
+    padding: 0.6rem 1rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    margin-bottom: 1rem;
+    border: 1px solid #4CAF50;
+}
+
+.promo-banner strong {
+    color: #CEBA4C;
+}
+
+/* Runs quantity selector */
+.runs-qty-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin: 0.75rem 0 0.25rem;
+}
+.runs-qty-row label {
+    color: #ccc;
+    font-size: 0.9rem;
+    margin-right: 0.25rem;
+}
+.runs-qty-btn {
+    width: 32px;
+    height: 32px;
+    border: 1px solid rgba(206, 186, 76, 0.5);
+    border-radius: 6px;
+    background: rgba(206, 186, 76, 0.1);
+    color: #CEBA4C;
+    font-size: 1.1rem;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+    line-height: 1;
+}
+.runs-qty-btn:hover {
+    background: rgba(206, 186, 76, 0.25);
+    border-color: #CEBA4C;
+}
+.runs-qty-input {
+    width: 48px;
+    height: 32px;
+    text-align: center;
+    border: 1px solid rgba(206, 186, 76, 0.4);
+    border-radius: 6px;
+    background: rgba(13, 40, 73, 0.9);
+    color: #CEBA4C;
+    font-size: 1rem;
+    font-weight: 600;
+    -moz-appearance: textfield;
+}
+.runs-qty-input::-webkit-outer-spin-button,
+.runs-qty-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+.runs-qty-input:focus {
+    outline: none;
+    border-color: #CEBA4C;
+}
+
+.payment-divider {
+    border: none;
+    border-top: 1px solid rgba(206, 186, 76, 0.3);
+    margin: 1rem 0;
+}
+
+/* Wallet Connection */
+.payment-wallet-section {
+    text-align: center;
+    margin-bottom: 1rem;
+}
+
+.wallet-connect-btn {
+    background: linear-gradient(135deg, #AB9FF2, #7C3AED);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 0.75rem 1.5rem;
+    font-size: 0.95rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: opacity 0.2s;
+}
+
+.wallet-connect-btn:hover {
+    opacity: 0.9;
+}
+
+.wallet-connect-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.wallet-info {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 0.5rem;
+    background: rgba(171, 159, 242, 0.1);
+    border: 1px solid rgba(171, 159, 242, 0.3);
+    border-radius: 8px;
+}
+
+.wallet-addr {
+    color: #AB9FF2;
+    font-family: monospace;
+    font-size: 0.9rem;
+}
+
+.wallet-disconnect-btn {
+    background: none;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #888;
+    border-radius: 4px;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+
+.wallet-disconnect-btn:hover {
+    color: #f44336;
+    border-color: #f44336;
+}
+
+/* Payment Method Cards */
+.payment-method-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(206, 186, 76, 0.2);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+.payment-method-card h3 {
+    color: #CEBA4C;
+    font-size: 1rem;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid rgba(206, 186, 76, 0.15);
+}
+
+/* Payment options (radio-like buttons) */
+.payment-options {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.payment-option {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.payment-option:hover {
+    border-color: rgba(206, 186, 76, 0.4);
+    background: rgba(206, 186, 76, 0.05);
+}
+
+.payment-option input[type="radio"] {
+    accent-color: #CEBA4C;
+}
+
+.payment-option-label {
+    color: #f2f2f2;
+    font-size: 0.9rem;
+}
+
+.payment-option-label .price {
+    color: #CEBA4C;
+    font-weight: bold;
+}
+
+.payment-option-label .desc {
+    color: #888;
+    font-size: 0.8rem;
+    margin-left: 0.25rem;
+}
+
+/* Payment action buttons */
+.payment-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.pay-btn {
+    flex: 1;
+    min-width: 120px;
+    padding: 0.6rem 1rem;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s;
+}
+
+.pay-btn-primary {
+    background: #CEBA4C;
+    color: #0D2849;
+    font-weight: bold;
+}
+
+.pay-btn-primary:hover {
+    background: #d4c45a;
+}
+
+.pay-btn-secondary {
+    background: rgba(255, 255, 255, 0.1);
+    color: #f2f2f2;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.pay-btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.pay-btn-stripe {
+    background: #635BFF;
+    color: #fff;
+    font-weight: bold;
+}
+
+.pay-btn-stripe:hover {
+    background: #5349e0;
+}
+
+.pay-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Rewards program tier info */
+.memecoin-section {
+    text-align: center;
+    padding: 0.75rem;
+    background: rgba(206, 186, 76, 0.05);
+    border-radius: 8px;
+    border: 1px solid rgba(206, 186, 76, 0.15);
+}
+
+.memecoin-section p {
+    color: #888;
+    font-size: 0.85rem;
+    margin-bottom: 0.5rem;
+}
+
+.memecoin-tiers {
+    font-size: 0.8rem;
+    color: #aaa;
+    line-height: 1.6;
+}
+
+.memecoin-tiers strong {
+    color: #CEBA4C;
+}
+
+/* Manual Payment Section */
+.manual-payment-section {
+    display: none;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(206, 186, 76, 0.2);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-top: 1rem;
+}
+
+.manual-payment-section h4 {
+    color: #CEBA4C;
+    margin-bottom: 0.75rem;
+}
+
+.manual-wallet-display {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.5rem;
+}
+
+.manual-wallet-display code {
+    color: #AB9FF2;
+    font-size: 0.8rem;
+    flex: 1;
+    word-break: break-all;
+}
+
+.copy-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #f2f2f2;
+    border-radius: 4px;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.copy-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.manual-amount {
+    color: #CEBA4C;
+    font-weight: bold;
+    font-size: 1rem;
+    text-align: center;
+    margin: 0.5rem 0;
+}
+
+.manual-timer {
+    text-align: center;
+    margin: 0.5rem 0;
+    font-size: 0.9rem;
+}
+
+.manual-timer span {
+    font-family: monospace;
+    font-weight: bold;
+}
+
+.manual-verify-group {
+    margin-top: 0.75rem;
+}
+
+.manual-verify-group label {
+    display: block;
+    color: #aaa;
+    font-size: 0.85rem;
+    margin-bottom: 0.25rem;
+}
+
+.manual-verify-group input {
+    width: 100%;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    color: #f2f2f2;
+    font-family: monospace;
+    font-size: 0.85rem;
+    margin-bottom: 0.5rem;
+}
+
+.manual-verify-group input:focus {
+    outline: none;
+    border-color: rgba(206, 186, 76, 0.5);
+}
+
+/* Payment Status */
+.payment-status {
+    display: none;
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    margin-top: 1rem;
+    text-align: center;
+}
+
+.payment-status-success {
+    display: block;
+    background: rgba(76, 175, 80, 0.15);
+    border: 1px solid rgba(76, 175, 80, 0.3);
+    color: #4CAF50;
+}
+
+.payment-receipt-link {
+    display: inline-block;
+    margin-left: 0.25rem;
+    color: #CEBA4C;
+    text-decoration: underline;
+    font-weight: bold;
+    transition: color 0.2s;
+}
+
+.payment-receipt-link:hover {
+    color: #d9ca6a;
+}
+
+.payment-status-error {
+    display: block;
+    background: rgba(244, 67, 54, 0.15);
+    border: 1px solid rgba(244, 67, 54, 0.3);
+    color: #f44336;
+}
+
+.payment-status-pending {
+    display: block;
+    background: rgba(255, 152, 0, 0.15);
+    border: 1px solid rgba(255, 152, 0, 0.3);
+    color: #ff9800;
+}
+
+/* Reward Tier Badges */
+.tier-badge {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+.tier-badge-whale {
+    background: linear-gradient(135deg, #CEBA4C, #B8860B);
+    color: #0D2849;
+}
+
+.tier-badge-unlimited {
+    background: rgba(171, 159, 242, 0.2);
+    color: #AB9FF2;
+    border: 1px solid rgba(171, 159, 242, 0.4);
+}
+
+.tier-badge-annual {
+    background: rgba(76, 175, 80, 0.2);
+    color: #4CAF50;
+    border: 1px solid rgba(76, 175, 80, 0.4);
+}
+
+/* Access granted banner */
+.access-granted-banner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: rgba(76, 175, 80, 0.1);
+    border: 1px solid rgba(76, 175, 80, 0.3);
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    color: #4CAF50;
+    font-size: 0.9rem;
+}
+
+.access-granted-banner .access-icon {
+    font-size: 1.2rem;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+    .payment-modal-content {
+        padding: 1.25rem;
+        margin: 0.5rem;
+    }
+
+    .payment-actions {
+        flex-direction: column;
+    }
+
+    .pay-btn {
+        min-width: auto;
+    }
+}
