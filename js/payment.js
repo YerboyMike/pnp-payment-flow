@@ -161,10 +161,17 @@ function showPaymentModal(tool) {
     if (!modal) return;
 
     // Update tool name in modal
+    const toolNames = { bank: 'Bank Processor', labeler: 'Smart Labeler', tis: 'TIS Generator', 'sales-tax': 'Sales Tax Helper' };
+    const toolDisplayName = toolNames[tool] || tool;
     const toolNameEl = modal.querySelector('.payment-tool-name');
     if (toolNameEl) {
-        const names = { bank: 'Bank Processor', labeler: 'Smart Labeler', tis: 'TIS Generator', 'sales-tax': 'Sales Tax Helper' };
-        toolNameEl.textContent = names[tool] || tool;
+        toolNameEl.textContent = toolDisplayName;
+    }
+
+    // Update plan dropdown with actual tool name
+    const planSelect = document.getElementById('paymentPlan');
+    if (planSelect) {
+        planSelect.innerHTML = `<option value="single">${toolDisplayName}</option><option value="bundle">All 4 Tools</option>`;
     }
 
     paymentModalTrigger = document.activeElement;
@@ -374,8 +381,18 @@ async function handleSolPayment(isBundle) {
         const signature = await connection.sendRawTransaction(signed.serialize());
         console.log('[Payment] TX signature:', signature);
 
-        showPaymentStatus('pending', 'Transaction sent. Waiting for confirmation...');
-        await connection.confirmTransaction(signature, 'confirmed');
+        showPaymentStatus('pending', 'Transaction sent — confirming on Solana... <a href="https://solscan.io/tx/' + signature + '" target="_blank" rel="noopener" style="color:#CEBA4C;">View on Solscan</a>');
+        try {
+            await Promise.race([
+                connection.confirmTransaction(signature, 'confirmed'),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Confirmation timeout')), 60000))
+            ]);
+        } catch (e) {
+            if (e.message === 'Confirmation timeout') {
+                showPaymentStatus('pending', 'Still confirming... <a href="https://solscan.io/tx/' + signature + '" target="_blank" rel="noopener" style="color:#CEBA4C;">Check Solscan</a>');
+                await connection.confirmTransaction(signature, 'confirmed');
+            } else { throw e; }
+        }
         console.log('[Payment] TX confirmed on-chain');
 
         showPaymentStatus('pending', 'Confirmed! Verifying with backend...');
@@ -502,11 +519,21 @@ async function handleSplPayment(tokenKey, isBundle) {
 
         const signed = await pnpWallet.signTransaction(tx);
         const signature = await connection.sendRawTransaction(signed.serialize());
-        console.log('[Payment] USDC TX signature:', signature);
+        console.log(`[Payment] ${symbol} TX signature:`, signature);
 
-        showPaymentStatus('pending', 'Transaction sent. Waiting for confirmation...');
-        await connection.confirmTransaction(signature, 'confirmed');
-        console.log('[Payment] USDC TX confirmed on-chain');
+        showPaymentStatus('pending', 'Transaction sent — confirming on Solana... <a href="https://solscan.io/tx/' + signature + '" target="_blank" rel="noopener" style="color:#CEBA4C;">View on Solscan</a>');
+        try {
+            await Promise.race([
+                connection.confirmTransaction(signature, 'confirmed'),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Confirmation timeout')), 60000))
+            ]);
+        } catch (e) {
+            if (e.message === 'Confirmation timeout') {
+                showPaymentStatus('pending', 'Still confirming... <a href="https://solscan.io/tx/' + signature + '" target="_blank" rel="noopener" style="color:#CEBA4C;">Check Solscan</a>');
+                await connection.confirmTransaction(signature, 'confirmed');
+            } else { throw e; }
+        }
+        console.log(`[Payment] ${symbol} TX confirmed on-chain`);
 
         showPaymentStatus('pending', 'Confirmed! Verifying with backend...');
 
@@ -691,6 +718,11 @@ function updateManualTimer(timerEl) {
         timerEl.textContent = 'EXPIRED';
         timerEl.style.color = '#f44336';
         clearInterval(manualTimerInterval);
+        // Clear expired session
+        manualSessionWallet = null;
+        manualSessionExpiry = null;
+        localStorage.removeItem('pnp_manual_session');
+        showPaymentStatus('error', 'Session expired. Click "Manual Payment" again for a fresh address.');
         return;
     }
 
@@ -711,6 +743,14 @@ async function verifyManualPayment() {
 
     if (!txSig) {
         showPaymentStatus('error', 'Please paste your transaction signature.');
+        return;
+    }
+
+    if (manualSessionExpiry && manualSessionExpiry < Date.now() / 1000) {
+        showPaymentStatus('error', 'Session expired. Click "Manual Payment" again for a fresh address.');
+        manualSessionWallet = null;
+        manualSessionExpiry = null;
+        localStorage.removeItem('pnp_manual_session');
         return;
     }
 
@@ -1221,9 +1261,12 @@ function updateProcessAnotherButton(depleted) {
 async function handleManualPaymentFlow(tool) {
     if (paymentProcessing) return;
 
-    // Read currency from dropdown
+    // Read currency and plan from dropdowns
     const currencySelect = document.getElementById('paymentCurrency');
+    const planSelect = document.getElementById('paymentPlan');
     let currency = currencySelect ? currencySelect.value.toUpperCase() : 'SOL';
+    const isBundle = planSelect ? planSelect.value === 'bundle' : false;
+    if (isBundle) tool = 'bundle';
     manualCurrency = currency;
 
     // Check for existing session in localStorage
