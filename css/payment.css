@@ -289,6 +289,67 @@
     margin-left: 0.25rem;
 }
 
+/* Payment currency + plan dropdowns */
+.payment-selectors {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+}
+
+.payment-selector-group {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.payment-selector-group label {
+    font-size: 0.75rem;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.payment-selector-group select {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(206, 186, 76, 0.3);
+    border-radius: 8px;
+    padding: 0.6rem 0.75rem;
+    color: #CEBA4C;
+    font-family: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23CEBA4C' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    padding-right: 2rem;
+}
+
+.payment-selector-group select:focus {
+    border-color: #CEBA4C;
+    outline: none;
+}
+
+.payment-selector-group select option {
+    background: #0D2849;
+    color: #f2f2f2;
+}
+
+.payment-price-display {
+    text-align: center;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #CEBA4C;
+    padding: 0.5rem;
+    margin-bottom: 0.75rem;
+    background: rgba(206, 186, 76, 0.06);
+    border-radius: 8px;
+    border: 1px solid rgba(206, 186, 76, 0.15);
+}
+
 /* Payment action buttons */
 .payment-actions {
     display: flex;
@@ -365,6 +426,33 @@
 
 .memecoin-tiers strong {
     color: #CEBA4C;
+}
+
+.buy-pnp-hint {
+    display: block;
+    margin-top: 0.6rem;
+    color: #888;
+    font-size: 0.72rem;
+}
+.buy-pnp-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-top: 0.25rem;
+    color: #CEBA4C;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: opacity 0.2s;
+}
+.buy-pnp-link:hover {
+    opacity: 0.8;
+    text-decoration: underline;
+}
+.buy-pnp-logo {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
 }
 
 /* Manual Payment Section */

@@ -14,6 +14,7 @@ let manualTimerInterval = null;
 let paymentProcessing = false;
 let cachedPricing = null;
 let paymentModalTrigger = null;
+let manualCurrency = 'SOL';
 
 // Fetch pricing from backend and update all displayed prices
 async function loadPricing() {
@@ -76,7 +77,10 @@ function updateRunsQtyUI() {
     if (label) label.textContent = qty;
     if (plural) plural.textContent = qty > 1 ? 's' : '';
 
-    // Update displayed prices using cached pricing from backend
+    // Update crypto price display
+    updatePaymentPrice();
+
+    // Update Stripe prices (still uses radio buttons)
     if (!cachedPricing) return;
     const p = cachedPricing;
     document.querySelectorAll('.payment-option').forEach(opt => {
@@ -84,17 +88,12 @@ function updateRunsQtyUI() {
         const priceSpan = opt.querySelector('.price');
         if (!radio || !priceSpan) return;
         const v = radio.value;
-        let base = 0, symbol = '';
-        if (v === 'sol_single') { base = p.sol.per_tool; symbol = ' SOL'; }
-        else if (v === 'sol_bundle') { base = p.sol.bundle; symbol = ' SOL'; }
-        else if (v === 'usdc_single') { base = p.usdc.per_tool; symbol = ' USDC'; }
-        else if (v === 'usdc_bundle') { base = p.usdc.bundle; symbol = ' USDC'; }
-        else if (v === 'single') { base = p.stripe.per_tool; symbol = ''; }
-        else if (v === 'bundle') { base = p.stripe.bundle; symbol = ''; }
+        let base = 0;
+        if (v === 'single') { base = p.stripe.per_tool; }
+        else if (v === 'bundle') { base = p.stripe.bundle; }
         if (base) {
-            const isUsd = (v === 'single' || v === 'bundle');
             const total = parseFloat((base * qty).toPrecision(10));
-            priceSpan.textContent = isUsd ? `$${total}` : `${total}${symbol}`;
+            priceSpan.textContent = `$${total}`;
         }
     });
 }
@@ -176,6 +175,9 @@ function showPaymentModal(tool) {
     const closeBtn = modal.querySelector('#closePaymentModal');
     if (closeBtn) setTimeout(() => closeBtn.focus(), 50);
 
+    // Populate currency dropdown
+    populatePaymentDropdowns();
+
     // Try auto-connect wallet
     tryWalletAutoConnect().then(connected => {
         if (connected) {
@@ -235,7 +237,7 @@ function updateWalletUI(connected) {
 function lockPaymentButtons() {
     paymentProcessing = true;
     const ids = [
-        'paymentConnectWallet', 'paySolSingle', 'paySolBundle',
+        'paymentConnectWallet', 'payNowBtn', 'paySolBundle',
         'payUsdcSingle', 'payUsdcBundle', 'payStripeSingle',
         'payStripeBundle', 'showManualPayment', 'verifyManualPayment'
     ];
@@ -251,7 +253,7 @@ function lockPaymentButtons() {
 function unlockPaymentButtons() {
     paymentProcessing = false;
     const ids = [
-        'paymentConnectWallet', 'paySolSingle', 'paySolBundle',
+        'paymentConnectWallet', 'payNowBtn', 'paySolBundle',
         'payUsdcSingle', 'payUsdcBundle', 'payStripeSingle',
         'payStripeBundle', 'showManualPayment', 'verifyManualPayment'
     ];
@@ -406,7 +408,7 @@ async function handleSolPayment(isBundle) {
             return; // Keep buttons locked through redirect
         } else if (verifyData.error === 'rate_limited') {
             const statusEl = document.getElementById('paymentStatus');
-            const retryBtn = document.getElementById('verifyManualPayment') || document.getElementById('paySolSingle');
+            const retryBtn = document.getElementById('verifyManualPayment') || document.getElementById('payNowBtn');
             showRateLimitWarning(retryBtn, statusEl);
         } else {
             showPaymentStatus('error', verifyData.detail || 'Verification failed');
@@ -419,7 +421,7 @@ async function handleSolPayment(isBundle) {
             showPaymentStatus('error', 'Transaction cancelled.');
         } else if (errMsg.includes('429') || errMsg.toLowerCase().includes('rate limit') || errMsg.toLowerCase().includes('too many requests')) {
             const statusEl = document.getElementById('paymentStatus');
-            const retryBtn = document.getElementById('paySolSingle');
+            const retryBtn = document.getElementById('payNowBtn');
             showRateLimitWarning(retryBtn, statusEl);
         } else {
             showPaymentStatus('error', `Payment failed: ${sanitizePaymentError(errMsg)}`);
@@ -432,7 +434,7 @@ async function handleSolPayment(isBundle) {
 /**
  * Handle USDC payment via Phantom (auto-prompt, mirrors SOL flow).
  */
-async function handleUsdcPayment(isBundle) {
+async function handleSplPayment(tokenKey, isBundle) {
     if (paymentProcessing) return;
 
     if (typeof solanaWeb3 === 'undefined') {
@@ -456,45 +458,36 @@ async function handleUsdcPayment(isBundle) {
         const pricingRes = await fetch(`${PNP_API}/api/payments/pricing`);
         const pricing = await pricingRes.json();
 
-        const baseAmount = isBundle ? pricing.usdc.bundle : pricing.usdc.per_tool;
-        const amount = baseAmount * qty;
-        const usdcMint = pricing.usdc && pricing.usdc.mint;
-        const merchantAta = pricing.usdc && pricing.usdc.merchant_ata;
-
-        showPaymentStatus('pending', `Initiating ${amount} USDC payment (${qty} run${qty > 1 ? 's' : ''})...`);
-
-        console.log('[USDC Debug] Pricing response:', JSON.stringify(pricing.usdc));
-        console.log('[USDC Debug] Mint from backend:', usdcMint);
-        console.log('[USDC Debug] Merchant ATA from backend:', merchantAta);
-
-        if (!usdcMint || !merchantAta) {
-            showPaymentStatus('error', 'USDC payment not available. Please try another method.');
+        const tokenConfig = pricing[tokenKey];
+        if (!tokenConfig || !tokenConfig.mint || !tokenConfig.merchant_ata) {
+            showPaymentStatus('error', `${tokenKey.toUpperCase()} payment not available. Please try another method.`);
             return;
         }
 
-        const mintPubkey = new PublicKey(usdcMint);
-        const merchantAtaPubkey = new PublicKey(merchantAta);
+        const baseAmount = isBundle ? tokenConfig.bundle : tokenConfig.per_tool;
+        const amount = baseAmount * qty;
+        const symbol = tokenConfig.symbol || tokenKey.toUpperCase();
+        const decimals = tokenConfig.decimals || 6;
 
-        // 2. Derive user's USDC ATA
+        showPaymentStatus('pending', `Initiating ${amount.toLocaleString()} ${symbol} payment (${qty} run${qty > 1 ? 's' : ''})...`);
+
+        const mintPubkey = new PublicKey(tokenConfig.mint);
+        const merchantAtaPubkey = new PublicKey(tokenConfig.merchant_ata);
+
         const [userAta] = await getAssociatedTokenAddress(pnpPublicKey, mintPubkey);
-        console.log('[USDC Debug] User wallet:', pnpPublicKey.toString());
-        console.log('[USDC Debug] Derived user ATA:', userAta.toString());
 
-        // 3. Pre-check: does the user have a USDC account?
         const connection = new solanaWeb3.Connection(
             pricing.sol.rpc_url || 'https://api.mainnet-beta.solana.com', 'confirmed'
         );
         const userAtaInfo = await connection.getAccountInfo(userAta);
-        console.log('[USDC Debug] User ATA account info:', userAtaInfo ? 'EXISTS' : 'NULL');
         if (!userAtaInfo) {
-            showPaymentStatus('error', 'No USDC found in your wallet. Please fund your wallet with USDC first.');
+            showPaymentStatus('error', `No ${symbol} found in your wallet.`);
             return;
         }
 
-        // 4. Build TransferChecked instruction
-        const usdcAmount = amount * 1_000_000; // USDC has 6 decimals
+        const tokenAmount = amount * (10 ** decimals);
         const transferIx = createTransferCheckedInstruction(
-            userAta, mintPubkey, merchantAtaPubkey, pnpPublicKey, usdcAmount, 6
+            userAta, mintPubkey, merchantAtaPubkey, pnpPublicKey, tokenAmount, decimals
         );
 
         // 5. Build, sign, send transaction
@@ -526,7 +519,7 @@ async function handleUsdcPayment(isBundle) {
                 wallet: pnpPublicKey.toString(),
                 tx_signature: signature,
                 tool: tool,
-                currency: 'USDC',
+                currency: symbol,
             }),
         });
 
@@ -549,22 +542,72 @@ async function handleUsdcPayment(isBundle) {
         }
 
     } catch (e) {
-        console.error('[Payment] USDC payment error:', e);
+        console.error(`[Payment] ${symbol} payment error:`, e);
         const errMsg = e.message || '';
         if (errMsg.includes('User rejected')) {
             showPaymentStatus('error', 'Transaction cancelled.');
-        } else if (errMsg.includes('429') || errMsg.toLowerCase().includes('rate limit') || errMsg.toLowerCase().includes('too many requests')) {
-            const statusEl = document.getElementById('paymentStatus');
-            const retryBtn = document.getElementById('payUsdcSingle');
-            showRateLimitWarning(retryBtn, statusEl);
         } else if (errMsg.includes('Insufficient') || errMsg.includes('insufficient')) {
-            showPaymentStatus('error', 'Insufficient USDC balance.');
+            showPaymentStatus('error', `Insufficient ${symbol} balance.`);
         } else {
             showPaymentStatus('error', `Payment failed: ${sanitizePaymentError(errMsg)}`);
         }
     } finally {
         unlockPaymentButtons();
     }
+}
+
+/**
+ * Populate currency dropdown from pricing API and set up price updates.
+ */
+async function populatePaymentDropdowns() {
+    const currencySelect = document.getElementById('paymentCurrency');
+    const planSelect = document.getElementById('paymentPlan');
+    if (!currencySelect) return;
+
+    try {
+        if (!cachedPricing) {
+            const res = await fetch(`${PNP_API}/api/payments/pricing`);
+            cachedPricing = await res.json();
+        }
+        const pricing = cachedPricing;
+        const skipKeys = new Set(['sol', 'stripe', 'tools', 'memecoin_tiers']);
+
+        // Keep SOL as first option, add SPL tokens
+        let options = '<option value="sol">SOL</option>';
+        for (const [key, config] of Object.entries(pricing)) {
+            if (skipKeys.has(key) || !config.mint) continue;
+            const symbol = config.symbol || key.toUpperCase();
+            options += `<option value="${key}">${symbol}</option>`;
+        }
+        currencySelect.innerHTML = options;
+
+        // Attach change listeners
+        currencySelect.addEventListener('change', updatePaymentPrice);
+        if (planSelect) planSelect.addEventListener('change', updatePaymentPrice);
+
+        updatePaymentPrice();
+    } catch (e) {
+        console.debug('[PnP] Failed to populate payment dropdowns:', e);
+    }
+}
+
+/**
+ * Update the price display based on selected currency, plan, and quantity.
+ */
+function updatePaymentPrice() {
+    const display = document.getElementById('paymentPriceDisplay');
+    if (!display || !cachedPricing) return;
+
+    const currency = document.getElementById('paymentCurrency')?.value || 'sol';
+    const plan = document.getElementById('paymentPlan')?.value || 'single';
+    const qty = getRunsQty();
+
+    const pricing = cachedPricing[currency] || cachedPricing.sol;
+    const basePrice = plan === 'bundle' ? pricing.bundle : pricing.per_tool;
+    const total = basePrice * qty;
+    const symbol = pricing.symbol || currency.toUpperCase();
+
+    display.textContent = `Price: ${total.toLocaleString()} ${symbol}`;
 }
 
 /**
@@ -688,6 +731,7 @@ async function verifyManualPayment() {
                 session_wallet: manualSessionWallet,
                 tx_signature: txSig,
                 tool: currentPaymentTool || 'bank',
+                currency: manualCurrency || 'SOL',
             }),
         });
 
@@ -896,6 +940,15 @@ function initPaymentListeners() {
     const connectBtn = document.getElementById('paymentConnectWallet');
     if (connectBtn) connectBtn.addEventListener('click', handlePaymentConnect);
 
+    // Click runs counter to buy more runs
+    const runsCounter = document.getElementById('runsCounter');
+    if (runsCounter) {
+        runsCounter.addEventListener('click', () => {
+            const tool = runsCounter.dataset?.tool || 'bank';
+            showPaymentModal(tool);
+        });
+    }
+
     // Disconnect wallet
     const disconnectBtn = document.getElementById('paymentDisconnectWallet');
     if (disconnectBtn) {
@@ -906,31 +959,18 @@ function initPaymentListeners() {
     }
 
     // SOL/crypto payments — if radio buttons exist, respect the selection
-    const solSingleBtn = document.getElementById('paySolSingle');
-    if (solSingleBtn) {
-        solSingleBtn.addEventListener('click', () => {
-            const selected = document.querySelector('input[name="cryptoOption"]:checked');
-            if (selected) {
-                const val = selected.value;
-                if (val === 'sol_single') handleSolPayment(false);
-                else if (val === 'sol_bundle') handleSolPayment(true);
-                else if (val === 'usdc_single') handleUsdcPayment(false);
-                else if (val === 'usdc_bundle') handleUsdcPayment(true);
-            } else {
-                handleSolPayment(false);
-            }
+    // Pay Now button — reads from currency + plan dropdowns
+    const payNowBtn = document.getElementById('payNowBtn');
+    if (payNowBtn) {
+        payNowBtn.addEventListener('click', () => {
+            const currency = document.getElementById('paymentCurrency')?.value || 'sol';
+            const plan = document.getElementById('paymentPlan')?.value || 'single';
+            const isBundle = plan === 'bundle';
+
+            if (currency === 'sol') handleSolPayment(isBundle);
+            else handleSplPayment(currency, isBundle);
         });
     }
-
-    const solBundleBtn = document.getElementById('paySolBundle');
-    if (solBundleBtn) solBundleBtn.addEventListener('click', () => handleSolPayment(true));
-
-    // USDC payments
-    const usdcSingleBtn = document.getElementById('payUsdcSingle');
-    if (usdcSingleBtn) usdcSingleBtn.addEventListener('click', () => handleUsdcPayment(false));
-
-    const usdcBundleBtn = document.getElementById('payUsdcBundle');
-    if (usdcBundleBtn) usdcBundleBtn.addEventListener('click', () => handleUsdcPayment(true));
 
     // Stripe payments — temporarily disabled (Coming Soon)
     const stripeSingleBtn = document.getElementById('payStripeSingle');
@@ -1099,7 +1139,7 @@ function _updateRunsTooltip(counter, runsLeft) {
 
     counter.setAttribute('data-tooltip',
         lines.join('  |  ') +
-        '\n\nBuy single-tool or bundle (all 4) from any tool page.');
+        '\n\nClick to buy more runs.');
 }
 
 /**
@@ -1181,12 +1221,17 @@ function updateProcessAnotherButton(depleted) {
 async function handleManualPaymentFlow(tool) {
     if (paymentProcessing) return;
 
+    // Read currency from dropdown
+    const currencySelect = document.getElementById('paymentCurrency');
+    let currency = currencySelect ? currencySelect.value.toUpperCase() : 'SOL';
+    manualCurrency = currency;
+
     // Check for existing session in localStorage
     const saved = localStorage.getItem('pnp_manual_session');
     if (saved) {
         try {
             const session = JSON.parse(saved);
-            if (session.expiry > Date.now() / 1000 && session.tool === tool) {
+            if (session.expiry > Date.now() / 1000 && session.tool === tool && session.currency === currency) {
                 showManualPayment(tool, session.currency, session.amount, session.wallet, session.expiry);
                 showPaymentStatus('pending', `Send ${session.amount} ${session.currency} to the address below, then paste the transaction signature.`);
                 return;
@@ -1203,13 +1248,14 @@ async function handleManualPaymentFlow(tool) {
         const res = await fetch(`${PNP_API}/api/payments/crypto/prepare-manual`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tool: tool, currency: 'SOL' }),
+            body: JSON.stringify({ tool: tool, currency: currency }),
         });
 
         const data = await res.json();
 
         if (data.ok) {
-            showManualPayment(tool, 'SOL', data.amount, data.session_wallet, data.expires_at);
+            const walletAddr = data.wallet_address || data.session_wallet;
+            showManualPayment(tool, currency, data.amount, walletAddr, data.expires_at);
             showPaymentStatus('pending', `Send ${data.amount_display} to the address below, then paste the transaction signature.`);
         } else {
             showPaymentStatus('error', data.detail || 'Failed to create session');

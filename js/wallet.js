@@ -68,7 +68,7 @@ async function disconnectWallet() {
     fetch('/api/payments/access/clear-cookie', {
         method: 'POST',
         credentials: 'include',
-    }).catch(() => {});
+    }).catch(e => console.debug("[PnP]", e));
 
     // Remove gold theme when wallet disconnects
     if (typeof disableGoldTheme === 'function') {
@@ -273,7 +273,7 @@ function listenForAccountChanges() {
             localStorage.removeItem('pnp_disconnected');
             fetch('/api/payments/access/clear-cookie', {
                 method: 'POST', credentials: 'include'
-            }).catch(() => {});
+            }).catch(e => console.debug("[PnP]", e));
             if (typeof disableGoldTheme === 'function') disableGoldTheme();
             location.reload();
         }
@@ -337,7 +337,7 @@ function clearAccessToken() {
     fetch(`${PNP_API}/api/payments/access/clear-cookie`, {
         method: 'POST',
         credentials: 'include',
-    }).catch(() => {});
+    }).catch(e => console.debug("[PnP]", e));
 }
 
 /**
