@@ -25,6 +25,8 @@ document.addEventListener('DOMContentLoaded', () => {
             // Disconnect (token stays in DB for future restore)
             await disconnectWallet();
             updateWalletBtn();
+            // Sync payment modal wallet UI if open
+            if (typeof updateWalletUI === 'function') updateWalletUI(false);
             // Update runs counter to show no access
             if (typeof updateRunsCounter === 'function') {
                 updateRunsCounter({}, null);
@@ -48,6 +50,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Check rewards membership
                 const access = await checkTokenBalance();
                 if (access && access.has_access) {
+                    // Clear any pending sign prompt
+                    const signPrompt = document.querySelector('.rewards-sign-prompt');
+                    if (signPrompt) signPrompt.remove();
                     if (typeof checkToolAccess === 'function') {
                         const tool = document.getElementById('runsCounter')?.dataset?.tool;
                         if (tool) checkToolAccess(tool);
@@ -68,6 +73,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             || document.getElementById('tisForm')
                             || document.getElementById('salesTaxForm');
                         if (form) form.classList.remove('payment-locked');
+                    } else {
+                        // Wallet connected but no rewards or restore — check if they qualify
+                        checkAndPromptRewardsSignature();
                     }
                 }
             }
@@ -78,6 +86,13 @@ document.addEventListener('DOMContentLoaded', () => {
     (async () => {
         const autoConnected = await tryWalletAutoConnect();
         updateWalletBtn();
+        if (autoConnected) {
+            // Check if rewards are already active
+            const access = await checkAccess();
+            if (!access || !access.valid || access.method !== 'memecoin') {
+                checkAndPromptRewardsSignature();
+            }
+        }
     })();
 
     // Expose for accountChanged listener to call after reload

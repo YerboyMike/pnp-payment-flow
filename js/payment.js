@@ -306,18 +306,9 @@ async function handlePaymentConnect() {
                 return; // Keep buttons locked through redirect
             }
 
-            // Try wallet-based restore (for previous crypto payments)
-            if (typeof tryWalletRestore === 'function') {
-                const restored = await tryWalletRestore();
-                if (restored) {
-                    showPaymentStatus('success', 'Access restored! Welcome back.');
-                    setTimeout(() => {
-                        closePaymentModal();
-                        onPaymentComplete();
-                    }, 1500);
-                    return;
-                }
-            }
+            // No rewards access — check if they qualify and prompt to sign
+            // (wallet restore happens on page load via wallet-btn.js, not here)
+            checkAndPromptRewardsSignature();
         }
     } finally {
         unlockPaymentButtons();
@@ -616,6 +607,13 @@ async function populatePaymentDropdowns() {
         const pricing = cachedPricing;
         const skipKeys = new Set(['sol', 'stripe', 'tools', 'memecoin_tiers']);
 
+        // Token icon URLs
+        const tokenIcons = {
+            sol: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png',
+            usdc: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/logo.png',
+            pigeon: 'https://941pigeon.fun/logo-941.png',
+        };
+
         // Keep SOL as first option, add SPL tokens
         let options = '<option value="sol">SOL</option>';
         for (const [key, config] of Object.entries(pricing)) {
@@ -625,11 +623,39 @@ async function populatePaymentDropdowns() {
         }
         currencySelect.innerHTML = options;
 
+        // Add icon element next to dropdown if not already there
+        let iconEl = document.getElementById('currencyIcon');
+        if (!iconEl) {
+            // Wrap select in a row with the icon
+            const wrapper = document.createElement('div');
+            wrapper.style.cssText = 'display:flex;align-items:center;gap:0.5rem;';
+            iconEl = document.createElement('img');
+            iconEl.id = 'currencyIcon';
+            iconEl.style.cssText = 'width:24px;height:24px;border-radius:50%;flex-shrink:0;';
+            iconEl.alt = '';
+            currencySelect.parentElement.insertBefore(wrapper, currencySelect);
+            wrapper.appendChild(iconEl);
+            wrapper.appendChild(currencySelect);
+        }
+
+        function updateCurrencyIcon() {
+            const val = currencySelect.value;
+            const iconUrl = tokenIcons[val] || '';
+            if (iconEl && iconUrl) {
+                iconEl.src = iconUrl;
+                iconEl.onerror = function() { if (val === 'pigeon') { this.src = '/assets/pigeonhouse-logo.jpg'; this.onerror = null; } else { this.style.display = 'none'; } };
+                iconEl.style.display = '';
+            } else if (iconEl) {
+                iconEl.style.display = 'none';
+            }
+        }
+
         // Attach change listeners
-        currencySelect.addEventListener('change', updatePaymentPrice);
+        currencySelect.addEventListener('change', () => { updatePaymentPrice(); updateCurrencyIcon(); });
         if (planSelect) planSelect.addEventListener('change', updatePaymentPrice);
 
         updatePaymentPrice();
+        updateCurrencyIcon();
     } catch (e) {
         console.debug('[PnP] Failed to populate payment dropdowns:', e);
     }
@@ -913,6 +939,9 @@ function showPaymentStatus(type, message, opts) {
  * Called after successful payment. Override in each page's JS.
  */
 function onPaymentComplete() {
+    // Flag to show callout when runs counter updates
+    window._pnpShowPaymentCallout = true;
+
     // Default: reload to re-check access
     // Each page should override this to update their UI
     const paymentOverlay = document.getElementById('paymentOverlay');
@@ -923,6 +952,10 @@ function onPaymentComplete() {
     // Enable the submit button
     const submitBtn = document.getElementById('submitBtn');
     if (submitBtn) submitBtn.disabled = false;
+
+    // Re-check access to update runs counter (triggers callout)
+    const tool = document.getElementById('runsCounter')?.dataset?.tool || 'bank';
+    checkToolAccess(tool);
 }
 
 /**
@@ -1012,6 +1045,13 @@ function initPaymentListeners() {
         disconnectBtn.addEventListener('click', async () => {
             await disconnectWallet();
             updateWalletUI(false);
+            // Sync nav bar wallet button
+            if (typeof window._updateWalletBtn === 'function') window._updateWalletBtn();
+            // Hide runs counter
+            const counter = document.getElementById('runsCounter');
+            if (counter) counter.classList.add('d-none');
+            // Update runs counter to show no access
+            if (typeof updateRunsCounter === 'function') updateRunsCounter({}, null);
         });
     }
 
@@ -1161,12 +1201,49 @@ function updateRunsCounter(runsLeft, method) {
     // Build dynamic tooltip with per-tool breakdown
     _updateRunsTooltip(counter, runsLeft);
 
+    // Show post-payment callout if flagged
+    if (window._pnpShowPaymentCallout) {
+        window._pnpShowPaymentCallout = false;
+        showRunsCallout(counter);
+    }
+
     // Enable gold theme toggle for reward token holders, disable for others
     if (method === 'memecoin' && typeof enableGoldTheme === 'function') {
         enableGoldTheme();
     } else if (typeof disableGoldTheme === 'function') {
         disableGoldTheme();
     }
+}
+
+/**
+ * Show a callout bubble near the runs counter after successful payment.
+ */
+function showRunsCallout(counter) {
+    // Remove any existing callout
+    const old = counter.querySelector('.runs-callout');
+    if (old) old.remove();
+
+    const callout = document.createElement('div');
+    callout.className = 'runs-callout';
+    callout.innerHTML = '<div class="callout-title">Payment confirmed</div>' +
+        'Your runs are tracked here. Click anytime to buy more.' +
+        '<div class="callout-dismiss">Click to dismiss</div>';
+    counter.appendChild(callout);
+
+    // Pulse the counter border
+    counter.style.borderColor = 'rgba(206, 186, 76, 0.7)';
+    counter.style.boxShadow = '0 0 16px rgba(206, 186, 76, 0.2)';
+
+    function dismiss() {
+        callout.classList.add('runs-callout-exit');
+        counter.style.borderColor = '';
+        counter.style.boxShadow = '';
+        setTimeout(() => callout.remove(), 300);
+    }
+
+    callout.addEventListener('click', dismiss);
+    // Auto-dismiss after 6 seconds
+    setTimeout(dismiss, 6000);
 }
 
 /**

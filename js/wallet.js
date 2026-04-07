@@ -189,8 +189,11 @@ async function tryWalletRestore() {
  * Check rewards membership via token balance and get tier-based access.
  * Returns access info or null.
  */
+let _checkTokenBalanceRunning = false;
 async function checkTokenBalance() {
     if (!pnpPublicKey || !pnpWallet) return null;
+    if (_checkTokenBalanceRunning) return null; // prevent duplicate sign popups
+    _checkTokenBalanceRunning = true;
 
     try {
         // Get a fresh nonce for this check
@@ -248,6 +251,8 @@ async function checkTokenBalance() {
     } catch (e) {
         console.error('[Wallet] Rewards membership check error:', e);
         return null;
+    } finally {
+        _checkTokenBalanceRunning = false;
     }
 }
 
@@ -360,5 +365,168 @@ async function checkAccess() {
     } catch (e) {
         console.error('[Wallet] Access check error:', e);
         return null;
+    }
+}
+
+/**
+ * Lightweight client-side token balance check via public RPC.
+ * No signature needed — reads on-chain data directly.
+ * Returns { balance, tier, tierName, runsDesc } or null on error.
+ */
+async function checkBalanceClientSide(walletAddress) {
+    try {
+        // Get pricing data (cached by payment.js on page load)
+        let pricing = window._pnpPricingData;
+        if (!pricing) {
+            const res = await fetch(`${PNP_API}/api/payments/pricing`);
+            if (!res.ok) return null;
+            pricing = await res.json();
+        }
+
+        const mint = pricing.memecoin_mint;
+        const rpcUrl = pricing.sol && pricing.sol.rpc_url;
+        const tiers = pricing.memecoin_tiers;
+        if (!mint || !rpcUrl || !tiers) return null;
+
+        // RPC call to get token accounts
+        const rpcRes = await fetch(rpcUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                jsonrpc: '2.0', id: 1,
+                method: 'getTokenAccountsByOwner',
+                params: [
+                    walletAddress,
+                    { mint: mint },
+                    { encoding: 'jsonParsed' }
+                ]
+            })
+        });
+
+        if (!rpcRes.ok) return null;
+        const rpcData = await rpcRes.json();
+
+        const accounts = rpcData.result && rpcData.result.value;
+        if (!accounts || accounts.length === 0) return null;
+
+        // Sum balances across all token accounts for this mint
+        let totalBalance = 0;
+        for (const acct of accounts) {
+            const info = acct.account.data.parsed.info;
+            totalBalance += parseInt(info.tokenAmount.amount, 10) / Math.pow(10, info.tokenAmount.decimals);
+        }
+
+        // Map to tier (descending thresholds)
+        const thresholds = Object.keys(tiers).map(Number).sort((a, b) => b - a);
+        let tier = null;
+        let tierName = null;
+        let runsDesc = null;
+
+        const tierNames = { 30000000: 'Whale VIP', 10000000: 'Shark Elite', 1000000: 'Fish Starter' };
+
+        for (const t of thresholds) {
+            if (totalBalance >= t) {
+                tier = t;
+                tierName = tierNames[t] || 'Token Holder';
+                runsDesc = tiers[String(t)];
+                break;
+            }
+        }
+
+        if (!tier) return null;
+
+        return { balance: totalBalance, tier, tierName, runsDesc };
+    } catch (e) {
+        console.debug('[Wallet] Client-side balance check failed:', e);
+        return null;
+    }
+}
+
+/**
+ * Show a callout prompting the user to sign for rewards activation.
+ */
+function showRewardsSignPrompt(tierName, runsDesc) {
+    // Guard: already dismissed this session
+    if (sessionStorage.getItem('pnp_rewards_prompt_dismissed')) return;
+    // Guard: rewards already active
+    if (window._pnpMethod === 'memecoin') return;
+    // Guard: don't stack prompts
+    if (document.querySelector('.rewards-sign-prompt')) return;
+
+    const counter = document.getElementById('runsCounter');
+    if (!counter) return;
+
+    // Make counter visible so banner has an anchor
+    counter.classList.remove('d-none');
+
+    const prompt = document.createElement('div');
+    prompt.className = 'rewards-sign-prompt';
+    prompt.innerHTML =
+        '<div class="callout-title">You qualify for $PNP rewards!</div>' +
+        '<div style="margin:0.3rem 0">Your wallet qualifies for <strong>' + tierName + '</strong> — ' + runsDesc + '</div>' +
+        '<button type="button" class="rewards-sign-btn">Sign to Activate</button>' +
+        '<div class="callout-dismiss">Dismiss</div>';
+
+    counter.appendChild(prompt);
+
+    // Highlight the counter
+    counter.style.borderColor = 'rgba(206, 186, 76, 0.7)';
+    counter.style.boxShadow = '0 0 16px rgba(206, 186, 76, 0.2)';
+
+    function dismiss() {
+        sessionStorage.setItem('pnp_rewards_prompt_dismissed', '1');
+        prompt.classList.add('runs-callout-exit');
+        counter.style.borderColor = '';
+        counter.style.boxShadow = '';
+        setTimeout(() => prompt.remove(), 300);
+    }
+
+    // "Sign to Activate" button
+    prompt.querySelector('.rewards-sign-btn').addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const btn = e.target;
+        btn.disabled = true;
+        btn.textContent = 'Signing...';
+        try {
+            const access = await checkTokenBalance();
+            if (access && access.has_access) {
+                prompt.remove();
+                counter.style.borderColor = '';
+                counter.style.boxShadow = '';
+                // Refresh page access
+                const tool = counter.dataset.tool || 'bank';
+                if (typeof checkToolAccess === 'function') checkToolAccess(tool);
+            } else {
+                btn.disabled = false;
+                btn.textContent = 'Sign to Activate';
+            }
+        } catch (err) {
+            btn.disabled = false;
+            btn.textContent = 'Sign to Activate';
+        }
+    });
+
+    // Dismiss link
+    prompt.querySelector('.callout-dismiss').addEventListener('click', (e) => {
+        e.stopPropagation();
+        dismiss();
+    });
+}
+
+/**
+ * Orchestrator: check if connected wallet qualifies for rewards
+ * and show a sign prompt if they haven't activated yet.
+ */
+async function checkAndPromptRewardsSignature() {
+    // Guard: no wallet
+    if (!pnpPublicKey) return;
+    // Guard: rewards already active
+    if (window._pnpMethod === 'memecoin') return;
+    // Guard: dismissed this session
+    if (sessionStorage.getItem('pnp_rewards_prompt_dismissed')) return;
+
+    const result = await checkBalanceClientSide(pnpPublicKey.toString());
+    if (result) {
+        showRewardsSignPrompt(result.tierName, result.runsDesc);
     }
 }
