@@ -152,7 +152,7 @@ async function tryWalletRestore() {
         if (!nonceData.ok) return null;
 
         // 2. Sign the message
-        const message = `PnP Login: ${nonceData.nonce}`;
+        const message = `Sign to verify wallet ownership for PnP Tax. This is not a transaction and costs no gas.\n\nNonce: ${nonceData.nonce}`;
         const encodedMessage = new TextEncoder().encode(message);
         const signedMessage = await pnpWallet.signMessage(encodedMessage, 'utf8');
         const signature = btoa(String.fromCharCode(...signedMessage.signature));
@@ -206,7 +206,7 @@ async function checkTokenBalance() {
         if (!nonceData.ok) return null;
 
         // Sign the nonce to prove wallet ownership
-        const message = `PnP Login: ${nonceData.nonce}`;
+        const message = `Sign to verify wallet ownership for PnP Tax. This is not a transaction and costs no gas.\n\nNonce: ${nonceData.nonce}`;
         const encodedMessage = new TextEncoder().encode(message);
         const signedMessage = await pnpWallet.signMessage(encodedMessage, 'utf8');
         const signature = btoa(String.fromCharCode(...signedMessage.signature));

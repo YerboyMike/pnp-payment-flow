@@ -293,6 +293,7 @@ async function handlePaymentConnect() {
             if (typeof window._updateWalletBtn === 'function') window._updateWalletBtn();
 
             // Check token balance (includes wallet signature verification)
+            showPaymentStatus('pending', 'Verifying rewards tier...');
             const access = await checkTokenBalance();
 
             if (access && access.has_access) {
@@ -306,7 +307,8 @@ async function handlePaymentConnect() {
                 return; // Keep buttons locked through redirect
             }
 
-            // No rewards access — check if they qualify and prompt to sign
+            // No rewards access — clear status and check if they qualify
+            showPaymentStatus('', '');
             // (wallet restore happens on page load via wallet-btn.js, not here)
             checkAndPromptRewardsSignature();
         }
