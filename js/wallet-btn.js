@@ -57,26 +57,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         const tool = document.getElementById('runsCounter')?.dataset?.tool;
                         if (tool) checkToolAccess(tool);
                     }
-                } else if (typeof tryWalletRestore === 'function') {
-                    // Try wallet-based restore for previous crypto payments
-                    const restored = await tryWalletRestore();
-                    if (restored) {
-                        const tool = document.getElementById('runsCounter')?.dataset?.tool;
-                        if (tool && typeof checkToolAccess === 'function') {
-                            checkToolAccess(tool);
-                        }
-                        // Unlock the tool
-                        const overlay = document.getElementById('paymentOverlay');
-                        if (overlay) overlay.classList.add('d-none');
-                        const form = document.getElementById('uploadForm')
-                            || document.getElementById('labelerForm')
-                            || document.getElementById('tisForm')
-                            || document.getElementById('salesTaxForm');
-                        if (form) form.classList.remove('payment-locked');
-                    } else {
-                        // Wallet connected but no rewards or restore — check if they qualify
-                        checkAndPromptRewardsSignature();
-                    }
+                } else {
+                    // No rewards — check if they qualify and show sign prompt
+                    // (wallet restore happens on page load auto-connect, not here)
+                    checkAndPromptRewardsSignature();
                 }
             }
         }
