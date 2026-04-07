@@ -16,6 +16,13 @@ let cachedPricing = null;
 let paymentModalTrigger = null;
 let manualCurrency = 'SOL';
 
+// Payment flow analytics — structured logging for debugging drop-offs
+function trackPaymentStep(step, data) {
+    const entry = { step, tool: currentPaymentTool, timestamp: new Date().toISOString(), ...data };
+    console.log('[PaymentFlow]', step, entry);
+    // Future: send to /api/analytics/payment-step for server-side tracking
+}
+
 // Fetch pricing from backend and update all displayed prices
 async function loadPricing() {
     try {
@@ -159,6 +166,7 @@ function showPaymentModal(tool) {
     currentPaymentTool = tool;
     const modal = document.getElementById('paymentModal');
     if (!modal) return;
+    trackPaymentStep('modal_opened', { tool });
 
     // Update tool name in modal
     const toolNames = { bank: 'Bank Processor', labeler: 'Smart Labeler', tis: 'TIS Generator', 'sales-tax': 'Sales Tax Helper' };
@@ -335,6 +343,7 @@ async function handleSolPayment(isBundle) {
     lockPaymentButtons();
     const tool = isBundle ? 'bundle' : currentPaymentTool;
     const qty = getRunsQty();
+    trackPaymentStep('payment_started', { currency: 'SOL', isBundle, qty });
 
     try {
         // Get merchant wallet + pricing from pricing endpoint
@@ -380,6 +389,7 @@ async function handleSolPayment(isBundle) {
         const signed = await pnpWallet.signTransaction(tx);
         const signature = await connection.sendRawTransaction(signed.serialize());
         console.log('[Payment] TX signature:', signature);
+        trackPaymentStep('sol_tx_sent', { signature });
 
         showPaymentStatus('pending', 'Transaction sent — confirming on Solana... <a href="https://solscan.io/tx/' + signature + '" target="_blank" rel="noopener" style="color:#CEBA4C;">View on Solscan</a>');
         try {
@@ -394,6 +404,7 @@ async function handleSolPayment(isBundle) {
             } else { throw e; }
         }
         console.log('[Payment] TX confirmed on-chain');
+        trackPaymentStep('sol_tx_confirmed', { signature });
 
         showPaymentStatus('pending', 'Confirmed! Verifying with backend...');
 
@@ -417,6 +428,7 @@ async function handleSolPayment(isBundle) {
         console.log('[Payment] crypto verify response:', verifyRes.status, verifyData);
 
         if (verifyData.ok) {
+            trackPaymentStep('sol_payment_success', { signature, runs: verifyData.runs_granted });
             showPaymentStatus('success', 'Payment verified! Access granted.', { txSignature: signature });
             setTimeout(() => {
                 closePaymentModal();
@@ -433,6 +445,7 @@ async function handleSolPayment(isBundle) {
 
     } catch (e) {
         console.error('[Payment] SOL payment error:', e);
+        trackPaymentStep('sol_payment_error', { error: e.message });
         const errMsg = e.message || '';
         if (errMsg.includes('User rejected')) {
             showPaymentStatus('error', 'Transaction cancelled.');
@@ -453,6 +466,7 @@ async function handleSolPayment(isBundle) {
  */
 async function handleSplPayment(tokenKey, isBundle) {
     if (paymentProcessing) return;
+    trackPaymentStep('payment_started', { currency: tokenKey.toUpperCase(), isBundle, qty: getRunsQty() });
 
     if (typeof solanaWeb3 === 'undefined') {
         showPaymentStatus('error', 'Solana library not loaded. Please refresh the page.');
@@ -520,6 +534,7 @@ async function handleSplPayment(tokenKey, isBundle) {
         const signed = await pnpWallet.signTransaction(tx);
         const signature = await connection.sendRawTransaction(signed.serialize());
         console.log(`[Payment] ${symbol} TX signature:`, signature);
+        trackPaymentStep('spl_tx_sent', { currency: symbol, signature });
 
         showPaymentStatus('pending', 'Transaction sent — confirming on Solana... <a href="https://solscan.io/tx/' + signature + '" target="_blank" rel="noopener" style="color:#CEBA4C;">View on Solscan</a>');
         try {
@@ -534,6 +549,7 @@ async function handleSplPayment(tokenKey, isBundle) {
             } else { throw e; }
         }
         console.log(`[Payment] ${symbol} TX confirmed on-chain`);
+        trackPaymentStep('spl_tx_confirmed', { currency: symbol, signature });
 
         showPaymentStatus('pending', 'Confirmed! Verifying with backend...');
 
@@ -551,9 +567,9 @@ async function handleSplPayment(tokenKey, isBundle) {
         });
 
         const verifyData = await verifyRes.json();
-        console.log('[Payment] USDC verify response:', verifyRes.status, verifyData);
 
         if (verifyData.ok) {
+            trackPaymentStep('spl_payment_success', { currency: symbol, signature, runs: verifyData.runs_granted });
             showPaymentStatus('success', 'Payment verified! Access granted.', { txSignature: signature });
             setTimeout(() => {
                 closePaymentModal();
@@ -570,6 +586,7 @@ async function handleSplPayment(tokenKey, isBundle) {
 
     } catch (e) {
         console.error(`[Payment] ${symbol} payment error:`, e);
+        trackPaymentStep('spl_payment_error', { currency: symbol, error: e.message });
         const errMsg = e.message || '';
         if (errMsg.includes('User rejected')) {
             showPaymentStatus('error', 'Transaction cancelled.');
@@ -1268,6 +1285,7 @@ async function handleManualPaymentFlow(tool) {
     const isBundle = planSelect ? planSelect.value === 'bundle' : false;
     if (isBundle) tool = 'bundle';
     manualCurrency = currency;
+    trackPaymentStep('manual_payment_started', { currency, tool });
 
     // Check for existing session in localStorage
     const saved = localStorage.getItem('pnp_manual_session');
