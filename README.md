@@ -114,6 +114,109 @@ PnP processes bank statements entirely in memory. No PDFs, transaction data, or 
 
 **Contract Address:** `H5FvXfZk5VfEaeQo2yj3rYkSAMHHVbCBPxWuU1h6Qc8w`
 
+## API Contracts
+
+### POST /api/payments/crypto/verify
+Verify a direct crypto payment (SOL or SPL token).
+```json
+// Request
+{
+  "wallet": "FiDEiLwvE4z8...",
+  "tx_signature": "4pkQACFigUkd...",
+  "tool": "bank",           // or "labeler", "tis", "sales-tax", "bundle"
+  "currency": "SOL"         // or "USDC", "PIGEON", any SPL token
+}
+
+// Success Response (200) — sets httpOnly cookie
+{
+  "ok": true,
+  "access_token": "uuid-here",
+  "tools": ["bank"],
+  "amount_sol": 0.1,
+  "runs_granted": 1
+}
+
+// Error Response (400)
+{ "detail": "Payment could not be verified..." }
+```
+
+### POST /api/payments/crypto/prepare-manual
+Create a manual payment session (SOL uses session wallet, SPL uses merchant ATA).
+```json
+// Request
+{ "tool": "bank", "currency": "SOL" }
+
+// Response
+{
+  "ok": true,
+  "wallet_address": "session_or_merchant_ata",
+  "session_wallet": "session_wallet_for_sol",
+  "expires_at": 1234567890,
+  "amount": 0.1,
+  "amount_display": "0.1 SOL",
+  "tool": "bank",
+  "currency": "SOL",
+  "is_session": true
+}
+```
+
+### POST /api/payments/crypto/verify-manual
+Verify a manual payment.
+```json
+// Request
+{
+  "session_wallet": "wallet_address",
+  "tx_signature": "sig_here",
+  "tool": "bank",
+  "currency": "SOL"
+}
+
+// Success Response (200) — sets httpOnly cookie
+{
+  "ok": true,
+  "access_token": "uuid",
+  "tools": ["bank"],
+  "amount": 0.1,
+  "currency": "SOL",
+  "runs_granted": 1
+}
+```
+
+### POST /api/payments/crypto/restore-access
+Restore access on a new device by proving wallet ownership.
+```json
+// Request
+{
+  "wallet": "FiDEiLwvE4z8...",
+  "nonce": "uuid-nonce",
+  "signature": "base64-ed25519-sig"
+}
+
+// Success Response (200) — sets httpOnly cookie
+{
+  "ok": true,
+  "restored": true,
+  "tools": ["bank", "labeler", "tis", "sales-tax"],
+  "method": "sol",
+  "runs_left": { "bank": 3, "labeler": 3 }
+}
+
+// Not Found (404)
+{ "ok": false, "message": "No active access found for this wallet." }
+```
+
+### GET /api/payments/pricing
+Returns all payment options and pricing.
+```json
+{
+  "sol": { "per_tool": 0.1, "bundle": 0.5, "symbol": "SOL", "merchant_wallet": "9gHKe...", "rpc_url": "https://..." },
+  "usdc": { "per_tool": 100, "bundle": 250, "symbol": "USDC", "decimals": 6, "mint": "EPjFW...", "merchant_ata": "..." },
+  "pigeon": { "per_tool": 5000, "bundle": 20000, "symbol": "PIGEON", "decimals": 6, "mint": "4fSWE...", "merchant_ata": "..." },
+  "stripe": { "per_tool": 100, "bundle": 300, "symbol": "USD" },
+  "tools": ["bank", "labeler", "tis", "sales-tax"]
+}
+```
+
 ## Using This Code
 
 This code is MIT licensed. You're free to use it in your own project. If you're building a Solana-based payment system, this is a production-tested reference implementation.
