@@ -13,6 +13,7 @@ let manualSessionExpiry = null;
 let manualTimerInterval = null;
 let paymentProcessing = false;
 let cachedPricing = null;
+let paymentModalTrigger = null;
 
 // Fetch pricing from backend and update all displayed prices
 async function loadPricing() {
@@ -167,8 +168,13 @@ function showPaymentModal(tool) {
         toolNameEl.textContent = names[tool] || tool;
     }
 
+    paymentModalTrigger = document.activeElement;
     modal.style.display = 'flex';
     paymentModalOpen = true;
+
+    // Focus the close button for keyboard users
+    const closeBtn = modal.querySelector('#closePaymentModal');
+    if (closeBtn) setTimeout(() => closeBtn.focus(), 50);
 
     // Try auto-connect wallet
     tryWalletAutoConnect().then(connected => {
@@ -194,6 +200,12 @@ function closePaymentModal() {
     // Hide manual payment section
     const manualSection = document.getElementById('manualPaymentSection');
     if (manualSection) manualSection.style.display = 'none';
+
+    // Restore focus to the element that opened the modal
+    if (paymentModalTrigger) {
+        paymentModalTrigger.focus();
+        paymentModalTrigger = null;
+    }
 }
 
 /**
@@ -263,8 +275,7 @@ async function handlePaymentConnect() {
             // Sync nav bar wallet button
             if (typeof window._updateWalletBtn === 'function') window._updateWalletBtn();
 
-            // Authenticate + check token balance
-            await authenticateWallet();
+            // Check token balance (includes wallet signature verification)
             const access = await checkTokenBalance();
 
             if (access && access.has_access) {
@@ -714,11 +725,11 @@ async function verifyManualPayment() {
  */
 function copyManualAddress() {
     if (manualSessionWallet) {
-        navigator.clipboard.writeText(manualSessionWallet).then(() => {
+        copyToClipboard(manualSessionWallet).then(function(ok) {
             const btn = document.getElementById('copyManualAddr');
             if (btn) {
                 const original = btn.textContent;
-                btn.textContent = 'Copied!';
+                btn.textContent = ok ? 'Copied!' : 'Failed';
                 setTimeout(() => { btn.textContent = original; }, 2000);
             }
         });
@@ -854,6 +865,32 @@ function initPaymentListeners() {
         }
         closePaymentModal();
     });
+
+    // Escape key to close modal
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && paymentModalOpen) {
+            closePaymentModal();
+        }
+    });
+
+    // Focus trap within modal
+    const paymentModal = document.getElementById('paymentModal');
+    if (paymentModal) {
+        paymentModal.addEventListener('keydown', (e) => {
+            if (e.key !== 'Tab') return;
+            const focusable = paymentModal.querySelectorAll('button:not([disabled]):not([style*="display: none"]), input:not([disabled]), a[href], select:not([disabled]), [tabindex]:not([tabindex="-1"])');
+            if (!focusable.length) return;
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (e.shiftKey && document.activeElement === first) {
+                e.preventDefault();
+                last.focus();
+            } else if (!e.shiftKey && document.activeElement === last) {
+                e.preventDefault();
+                first.focus();
+            }
+        });
+    }
 
     // Connect wallet
     const connectBtn = document.getElementById('paymentConnectWallet');

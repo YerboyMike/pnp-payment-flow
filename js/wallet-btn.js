@@ -8,14 +8,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const textEl = btn.querySelector('.wallet-btn-text');
 
-    function truncateAddress(addr) {
-        if (!addr || addr.length < 10) return addr;
-        return addr.slice(0, 4) + '...' + addr.slice(-4);
-    }
-
     function updateWalletBtn() {
         if (pnpPublicKey) {
-            textEl.textContent = truncateAddress(pnpPublicKey.toString());
+            textEl.textContent = shortenAddress(pnpPublicKey.toString());
             btn.classList.add('connected');
             btn.title = pnpPublicKey.toString() + ' (click to disconnect)';
         } else {

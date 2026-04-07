@@ -9,6 +9,8 @@ let pnpWallet = null;
 let pnpPublicKey = null;
 let pnpWalletAuthed = false;
 let pnpWalletTier = null;
+let pnpAuthNonce = null;
+let pnpAuthSignature = null;
 
 // API base - same origin
 const PNP_API = '';
@@ -54,6 +56,8 @@ async function disconnectWallet() {
     pnpPublicKey = null;
     pnpWalletAuthed = false;
     pnpWalletTier = null;
+    pnpAuthNonce = null;
+    pnpAuthSignature = null;
 
     localStorage.removeItem('pnp_wallet');
     localStorage.setItem('pnp_disconnected', '1');
@@ -116,6 +120,8 @@ async function authenticateWallet() {
         const verifyData = await verifyRes.json();
         if (verifyData.ok) {
             pnpWalletAuthed = true;
+            pnpAuthNonce = nonceData.nonce;
+            pnpAuthSignature = signature;
             return true;
         }
 
@@ -184,14 +190,33 @@ async function tryWalletRestore() {
  * Returns access info or null.
  */
 async function checkTokenBalance() {
-    if (!pnpPublicKey) return null;
+    if (!pnpPublicKey || !pnpWallet) return null;
 
     try {
+        // Get a fresh nonce for this check
+        const nonceRes = await fetch(`${PNP_API}/api/payments/crypto/auth-nonce`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ wallet: pnpPublicKey.toString() }),
+        });
+        const nonceData = await nonceRes.json();
+        if (!nonceData.ok) return null;
+
+        // Sign the nonce to prove wallet ownership
+        const message = `PnP Login: ${nonceData.nonce}`;
+        const encodedMessage = new TextEncoder().encode(message);
+        const signedMessage = await pnpWallet.signMessage(encodedMessage, 'utf8');
+        const signature = btoa(String.fromCharCode(...signedMessage.signature));
+
         const res = await fetch(`${PNP_API}/api/payments/token/check-access`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
-            body: JSON.stringify({ wallet: pnpPublicKey.toString() }),
+            body: JSON.stringify({
+                wallet: pnpPublicKey.toString(),
+                nonce: nonceData.nonce,
+                signature: signature,
+            }),
         });
 
         const data = await res.json();
@@ -209,6 +234,9 @@ async function checkTokenBalance() {
             }
             return null;
         }
+
+        // Signature was accepted — wallet is authenticated
+        pnpWalletAuthed = true;
 
         if (data.has_access) {
             pnpWalletTier = data.tier;
