@@ -2,6 +2,14 @@
  * PnP Wallet Connection & Authentication
  * Handles Phantom wallet connection, signing, and rewards membership checks.
  * Shared across all tool pages.
+ *
+ * Storage strategy:
+ *   sessionStorage — wallet connection state (clears on hard refresh / new tab)
+ *   localStorage   — manual payment sessions only (survives everything)
+ *
+ * Sign strategy:
+ *   ONE signMessage() per connect flow. checkTokenBalance() uses a promise
+ *   guard so concurrent callers share the same sign instead of double-prompting.
  */
 
 // Wallet state
@@ -9,11 +17,12 @@ let pnpWallet = null;
 let pnpPublicKey = null;
 let pnpWalletAuthed = false;
 let pnpWalletTier = null;
-let pnpAuthNonce = null;
-let pnpAuthSignature = null;
 
 // API base - same origin
 const PNP_API = '';
+
+// Sign message shown in Phantom popup
+const PNP_SIGN_MESSAGE = 'Sign this message to verify wallet ownership and activate your $PNP rewards tier on pnp.tax.\n\nThis is NOT a transaction and costs no SOL.';
 
 /**
  * Connect Phantom wallet.
@@ -31,8 +40,8 @@ async function connectWallet() {
         pnpWallet = window.solana;
         pnpPublicKey = resp.publicKey;
 
-        localStorage.setItem('pnp_wallet', pnpPublicKey.toString());
-        localStorage.removeItem('pnp_disconnected');
+        sessionStorage.setItem('pnp_wallet', pnpPublicKey.toString());
+        sessionStorage.removeItem('pnp_disconnected');
         return pnpPublicKey.toString();
     } catch (e) {
         console.error('[Wallet] Connect rejected:', e);
@@ -42,6 +51,7 @@ async function connectWallet() {
 
 /**
  * Disconnect wallet.
+ * Clears local state and cookie. Token stays in DB for future restore.
  */
 async function disconnectWallet() {
     try {
@@ -56,15 +66,12 @@ async function disconnectWallet() {
     pnpPublicKey = null;
     pnpWalletAuthed = false;
     pnpWalletTier = null;
-    pnpAuthNonce = null;
-    pnpAuthSignature = null;
 
-    localStorage.removeItem('pnp_wallet');
-    localStorage.setItem('pnp_disconnected', '1');
-    localStorage.removeItem('pnp_tier');
+    sessionStorage.removeItem('pnp_wallet');
+    sessionStorage.setItem('pnp_disconnected', '1');
+    sessionStorage.removeItem('pnp_tier');
 
     // Clear the cookie only — don't delete the token from DB.
-    // The token stays so the user can restore access by reconnecting.
     fetch('/api/payments/access/clear-cookie', {
         method: 'POST',
         credentials: 'include',
@@ -77,126 +84,33 @@ async function disconnectWallet() {
 }
 
 /**
- * Authenticate wallet by signing a nonce message.
- * Returns true if successful.
- */
-async function authenticateWallet() {
-    if (!pnpPublicKey) {
-        console.error('[Wallet] No public key to authenticate');
-        return false;
-    }
-
-    try {
-        // 1. Request nonce
-        const nonceRes = await fetch(`${PNP_API}/api/payments/crypto/auth-nonce`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ wallet: pnpPublicKey.toString() }),
-        });
-
-        const nonceData = await nonceRes.json();
-        if (!nonceData.ok) {
-            console.error('[Wallet] Nonce request failed:', nonceData);
-            return false;
-        }
-
-        // 2. Sign the message
-        const message = `PnP Login: ${nonceData.nonce}`;
-        const encodedMessage = new TextEncoder().encode(message);
-        const signedMessage = await pnpWallet.signMessage(encodedMessage, 'utf8');
-        const signature = btoa(String.fromCharCode(...signedMessage.signature));
-
-        // 3. Verify with backend
-        const verifyRes = await fetch(`${PNP_API}/api/payments/crypto/auth-verify`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                wallet: pnpPublicKey.toString(),
-                nonce: nonceData.nonce,
-                signature: signature,
-            }),
-        });
-
-        const verifyData = await verifyRes.json();
-        if (verifyData.ok) {
-            pnpWalletAuthed = true;
-            pnpAuthNonce = nonceData.nonce;
-            pnpAuthSignature = signature;
-            return true;
-        }
-
-        console.error('[Wallet] Verification failed:', verifyData);
-        return false;
-    } catch (e) {
-        console.error('[Wallet] Authentication error:', e);
-        return false;
-    }
-}
-
-/**
- * Try to restore access for a wallet that previously paid.
- * Requests a nonce, signs it, and calls the restore endpoint.
- * Returns restore data if successful, null otherwise.
- */
-async function tryWalletRestore() {
-    if (!pnpPublicKey || !pnpWallet) return null;
-
-    try {
-        // 1. Request nonce
-        const nonceRes = await fetch(`${PNP_API}/api/payments/crypto/auth-nonce`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ wallet: pnpPublicKey.toString() }),
-        });
-        const nonceData = await nonceRes.json();
-        if (!nonceData.ok) return null;
-
-        // 2. Sign the message
-        const message = `Sign to verify wallet ownership for PnP Tax. This is not a transaction and costs no gas.\n\nNonce: ${nonceData.nonce}`;
-        const encodedMessage = new TextEncoder().encode(message);
-        const signedMessage = await pnpWallet.signMessage(encodedMessage, 'utf8');
-        const signature = btoa(String.fromCharCode(...signedMessage.signature));
-
-        // 3. Call restore endpoint
-        const restoreRes = await fetch(`${PNP_API}/api/payments/crypto/restore-access`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({
-                wallet: pnpPublicKey.toString(),
-                nonce: nonceData.nonce,
-                signature: signature,
-            }),
-        });
-
-        if (restoreRes.ok) {
-            const data = await restoreRes.json();
-            if (data.ok && data.restored) {
-                console.log('[Wallet] Access restored for wallet:', pnpPublicKey.toString().slice(0, 8) + '...');
-                return data;
-            }
-        }
-
-        return null;
-    } catch (e) {
-        // User rejected signing or network error — not an error, just no restore
-        console.log('[Wallet] Restore not available:', e.message || e);
-        return null;
-    }
-}
-
-/**
  * Check rewards membership via token balance and get tier-based access.
+ * Also attempts to restore a previous paid session if no token rewards
+ * (handled server-side in the check-access endpoint).
+ *
+ * Uses a promise guard: if called concurrently, the second caller awaits
+ * the same promise instead of triggering a second signMessage().
+ *
  * Returns access info or null.
  */
-let _checkTokenBalanceRunning = false;
+let _checkTokenBalancePromise = null;
+
 async function checkTokenBalance() {
+    // Promise guard — concurrent callers share the same sign flow
+    if (_checkTokenBalancePromise) return _checkTokenBalancePromise;
+    _checkTokenBalancePromise = _doCheckTokenBalance();
+    try {
+        return await _checkTokenBalancePromise;
+    } finally {
+        _checkTokenBalancePromise = null;
+    }
+}
+
+async function _doCheckTokenBalance() {
     if (!pnpPublicKey || !pnpWallet) return null;
-    if (_checkTokenBalanceRunning) return null; // prevent duplicate sign popups
-    _checkTokenBalanceRunning = true;
 
     try {
-        // Get a fresh nonce for this check
+        // 1. Request a fresh nonce
         const nonceRes = await fetch(`${PNP_API}/api/payments/crypto/auth-nonce`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -205,12 +119,13 @@ async function checkTokenBalance() {
         const nonceData = await nonceRes.json();
         if (!nonceData.ok) return null;
 
-        // Sign the nonce to prove wallet ownership
-        const message = `Sign to verify wallet ownership for PnP Tax. This is not a transaction and costs no gas.\n\nNonce: ${nonceData.nonce}`;
+        // 2. Single sign — clear message in Phantom popup
+        const message = PNP_SIGN_MESSAGE + `\n\nNonce: ${nonceData.nonce}`;
         const encodedMessage = new TextEncoder().encode(message);
         const signedMessage = await pnpWallet.signMessage(encodedMessage, 'utf8');
         const signature = btoa(String.fromCharCode(...signedMessage.signature));
 
+        // 3. Check rewards + attempt restore (one endpoint does both)
         const res = await fetch(`${PNP_API}/api/payments/token/check-access`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -225,7 +140,7 @@ async function checkTokenBalance() {
         const data = await res.json();
 
         if (data.error === 'rate_limited') {
-            console.warn('[Wallet] RPC rate limited during rewards membership check');
+            console.warn('[Wallet] RPC rate limited during rewards check');
             const statusEl = document.getElementById('paymentStatus');
             const checkBtn = document.getElementById('paymentConnectWallet');
             if (typeof showRateLimitWarning === 'function') {
@@ -238,23 +153,18 @@ async function checkTokenBalance() {
             return null;
         }
 
-        // Signature was accepted — wallet is authenticated
+        // Signature accepted — wallet is authenticated
         pnpWalletAuthed = true;
 
-        if (data.has_access) {
-            if (data.tier) {
-                pnpWalletTier = data.tier;
-                localStorage.setItem('pnp_tier', data.tier);
-            }
-            return data;
+        if (data.has_access && data.tier) {
+            pnpWalletTier = data.tier;
+            sessionStorage.setItem('pnp_tier', data.tier);
         }
 
         return data;
     } catch (e) {
-        console.error('[Wallet] Rewards membership check error:', e);
+        console.error('[Wallet] Rewards check error:', e);
         return null;
-    } finally {
-        _checkTokenBalanceRunning = false;
     }
 }
 
@@ -270,14 +180,13 @@ function listenForAccountChanges() {
         const newKey = newPublicKey ? newPublicKey.toString() : null;
 
         if (!newPublicKey || (oldKey && oldKey !== newKey)) {
-            // Clear local state without deleting the DB token
             pnpWallet = null;
             pnpPublicKey = null;
             pnpWalletAuthed = false;
             pnpWalletTier = null;
-            localStorage.removeItem('pnp_wallet');
-            localStorage.removeItem('pnp_tier');
-            localStorage.removeItem('pnp_disconnected');
+            sessionStorage.removeItem('pnp_wallet');
+            sessionStorage.removeItem('pnp_tier');
+            sessionStorage.removeItem('pnp_disconnected');
             fetch('/api/payments/access/clear-cookie', {
                 method: 'POST', credentials: 'include'
             }).catch(e => console.debug("[PnP]", e));
@@ -295,13 +204,14 @@ if (document.readyState === 'loading') {
 }
 
 /**
- * Try auto-connect if wallet was previously connected.
+ * Try auto-connect if wallet was previously connected in this session.
+ * Uses sessionStorage — won't auto-connect in new tabs or after hard refresh.
  */
 async function tryWalletAutoConnect() {
     if (!window.solana || !window.solana.isPhantom) return false;
 
-    // User explicitly disconnected — don't auto-reconnect
-    if (localStorage.getItem('pnp_disconnected') === '1') return false;
+    // User explicitly disconnected this session
+    if (sessionStorage.getItem('pnp_disconnected') === '1') return false;
 
     try {
         await window.solana.connect({ onlyIfTrusted: true });
@@ -319,9 +229,16 @@ async function tryWalletAutoConnect() {
 }
 
 /**
+ * Shorten a Solana address for display.
+ */
+function shortenAddress(addr) {
+    if (!addr || addr.length < 10) return addr || '';
+    return addr.slice(0, 4) + '...' + addr.slice(-4);
+}
+
+/**
  * Get the stored access token.
  * Cookie is httpOnly so JS can't read it — return empty string.
- * The browser sends the cookie automatically with credentials: 'include'.
  */
 function getAccessToken() {
     return '';
@@ -337,10 +254,9 @@ function storeAccessToken(token) {
 
 /**
  * Clear access cookie without deleting the token from DB.
- * Token stays for future wallet-based restore.
  */
 function clearAccessToken() {
-    localStorage.removeItem('pnp_tier');
+    sessionStorage.removeItem('pnp_tier');
     fetch(`${PNP_API}/api/payments/access/clear-cookie`, {
         method: 'POST',
         credentials: 'include',
@@ -361,7 +277,6 @@ async function checkAccess() {
             return await res.json();
         }
 
-        // Token invalid/expired - clear it
         clearAccessToken();
         return null;
     } catch (e) {
@@ -377,7 +292,6 @@ async function checkAccess() {
  */
 async function checkBalanceClientSide(walletAddress) {
     try {
-        // Get pricing data (cached by payment.js on page load)
         let pricing = window._pnpPricingData;
         if (!pricing) {
             const res = await fetch(`${PNP_API}/api/payments/pricing`);
@@ -390,7 +304,6 @@ async function checkBalanceClientSide(walletAddress) {
         const tiers = pricing.memecoin_tiers;
         if (!mint || !rpcUrl || !tiers) return null;
 
-        // RPC call to get token accounts
         const rpcRes = await fetch(rpcUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -411,20 +324,15 @@ async function checkBalanceClientSide(walletAddress) {
         const accounts = rpcData.result && rpcData.result.value;
         if (!accounts || accounts.length === 0) return null;
 
-        // Sum balances across all token accounts for this mint
         let totalBalance = 0;
         for (const acct of accounts) {
             const info = acct.account.data.parsed.info;
             totalBalance += parseInt(info.tokenAmount.amount, 10) / Math.pow(10, info.tokenAmount.decimals);
         }
 
-        // Map to tier (descending thresholds)
         const thresholds = Object.keys(tiers).map(Number).sort((a, b) => b - a);
-        let tier = null;
-        let tierName = null;
-        let runsDesc = null;
-
         const tierNames = { 30000000: 'Whale VIP', 10000000: 'Shark Elite', 1000000: 'Fish Starter' };
+        let tier = null, tierName = null, runsDesc = null;
 
         for (const t of thresholds) {
             if (totalBalance >= t) {
@@ -436,7 +344,6 @@ async function checkBalanceClientSide(walletAddress) {
         }
 
         if (!tier) return null;
-
         return { balance: totalBalance, tier, tierName, runsDesc };
     } catch (e) {
         console.debug('[Wallet] Client-side balance check failed:', e);
@@ -448,17 +355,13 @@ async function checkBalanceClientSide(walletAddress) {
  * Show a callout prompting the user to sign for rewards activation.
  */
 function showRewardsSignPrompt(tierName, runsDesc) {
-    // Guard: already dismissed this session
     if (sessionStorage.getItem('pnp_rewards_prompt_dismissed')) return;
-    // Guard: rewards already active
     if (window._pnpMethod === 'memecoin') return;
-    // Guard: don't stack prompts
     if (document.querySelector('.rewards-sign-prompt')) return;
 
     const counter = document.getElementById('runsCounter');
     if (!counter) return;
 
-    // Make counter visible so banner has an anchor
     counter.classList.remove('d-none');
 
     const prompt = document.createElement('div');
@@ -471,7 +374,6 @@ function showRewardsSignPrompt(tierName, runsDesc) {
 
     counter.appendChild(prompt);
 
-    // Highlight the counter
     counter.style.borderColor = 'rgba(206, 186, 76, 0.7)';
     counter.style.boxShadow = '0 0 16px rgba(206, 186, 76, 0.2)';
 
@@ -483,19 +385,17 @@ function showRewardsSignPrompt(tierName, runsDesc) {
         setTimeout(() => prompt.remove(), 300);
     }
 
-    // "Sign to Activate" button
     prompt.querySelector('.rewards-sign-btn').addEventListener('click', async (e) => {
         e.stopPropagation();
         const btn = e.target;
         btn.disabled = true;
-        btn.textContent = 'Signing...';
+        btn.textContent = 'Verifying rewards...';
         try {
             const access = await checkTokenBalance();
             if (access && access.has_access) {
                 prompt.remove();
                 counter.style.borderColor = '';
                 counter.style.boxShadow = '';
-                // Refresh page access
                 const tool = counter.dataset.tool || 'bank';
                 if (typeof checkToolAccess === 'function') checkToolAccess(tool);
             } else {
@@ -508,7 +408,6 @@ function showRewardsSignPrompt(tierName, runsDesc) {
         }
     });
 
-    // Dismiss link
     prompt.querySelector('.callout-dismiss').addEventListener('click', (e) => {
         e.stopPropagation();
         dismiss();
@@ -520,11 +419,8 @@ function showRewardsSignPrompt(tierName, runsDesc) {
  * and show a sign prompt if they haven't activated yet.
  */
 async function checkAndPromptRewardsSignature() {
-    // Guard: no wallet
     if (!pnpPublicKey) return;
-    // Guard: rewards already active
     if (window._pnpMethod === 'memecoin') return;
-    // Guard: dismissed this session
     if (sessionStorage.getItem('pnp_rewards_prompt_dismissed')) return;
 
     const result = await checkBalanceClientSide(pnpPublicKey.toString());
