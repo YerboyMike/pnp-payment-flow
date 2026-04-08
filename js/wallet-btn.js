@@ -50,16 +50,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Check rewards membership
                 const access = await checkTokenBalance();
                 if (access && access.has_access) {
-                    // Clear any pending sign prompt
+                    // Rewards activated or previous payment restored — one sign did it all
                     const signPrompt = document.querySelector('.rewards-sign-prompt');
                     if (signPrompt) signPrompt.remove();
                     if (typeof checkToolAccess === 'function') {
                         const tool = document.getElementById('runsCounter')?.dataset?.tool;
                         if (tool) checkToolAccess(tool);
                     }
+                    // Unlock tool if access was restored from a previous payment
+                    if (access.restored) {
+                        const overlay = document.getElementById('paymentOverlay');
+                        if (overlay) overlay.classList.add('d-none');
+                        const form = document.getElementById('uploadForm')
+                            || document.getElementById('labelerForm')
+                            || document.getElementById('tisForm')
+                            || document.getElementById('salesTaxForm');
+                        if (form) form.classList.remove('payment-locked');
+                    }
                 } else {
-                    // No rewards — check if they qualify and show sign prompt
-                    // (wallet restore happens on page load auto-connect, not here)
+                    // No rewards or previous payment — show sign prompt if qualified
                     checkAndPromptRewardsSignature();
                 }
             }

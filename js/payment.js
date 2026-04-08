@@ -297,9 +297,12 @@ async function handlePaymentConnect() {
             const access = await checkTokenBalance();
 
             if (access && access.has_access) {
-                // Token Access Program member access granted
+                // Rewards activated or previous payment restored — one sign did it all
                 const tierDisplay = {whale: 'Whale VIP', unlimited: 'Shark Elite', annual: 'Fish Starter'};
-                showPaymentStatus('success', `Welcome back, ${tierDisplay[access.tier] || access.tier} member! Your access is active.`);
+                const msg = access.restored
+                    ? 'Access restored! Welcome back.'
+                    : `Welcome back, ${tierDisplay[access.tier] || access.tier} member! Your access is active.`;
+                showPaymentStatus('success', msg);
                 setTimeout(() => {
                     closePaymentModal();
                     onPaymentComplete();
@@ -307,9 +310,8 @@ async function handlePaymentConnect() {
                 return; // Keep buttons locked through redirect
             }
 
-            // No rewards access — clear status and check if they qualify
+            // No rewards or previous payment — clear status, show prompt if qualified
             showPaymentStatus('', '');
-            // (wallet restore happens on page load via wallet-btn.js, not here)
             checkAndPromptRewardsSignature();
         }
     } finally {

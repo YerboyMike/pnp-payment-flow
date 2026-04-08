@@ -242,8 +242,10 @@ async function checkTokenBalance() {
         pnpWalletAuthed = true;
 
         if (data.has_access) {
-            pnpWalletTier = data.tier;
-            localStorage.setItem('pnp_tier', data.tier);
+            if (data.tier) {
+                pnpWalletTier = data.tier;
+                localStorage.setItem('pnp_tier', data.tier);
+            }
             return data;
         }
 
