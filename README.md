@@ -102,12 +102,7 @@ PnP processes bank statements entirely in memory. No PDFs, transaction data, or 
 | Server-side balance checks | RPC verification before every tool run (rewards members) |
 | Annual run limits | Shark/Fish tiers have yearly caps with automatic reset |
 | Cross-device session sharing | One token row in DB, runs shared across all devices |
-| Per-IP daily limits (free mode) | 5 runs/day per IP during promotional periods |
-| AI budget cap | Global daily AI spend limit — tools degrade gracefully |
-| Transaction count cap | Max 5,000 rows per upload |
-| Financial content validation | Rejects non-financial uploads before AI processing |
-
-See [ABUSE_PREVENTION.md](ABUSE_PREVENTION.md) for the full abuse prevention system design.
+| Session wallet reuse | Manual payment sessions persist across modal close/refresh |
 | Session wallet reuse | Manual payment sessions are reused, not recreated on modal reopen |
 
 ## Token Tiers
