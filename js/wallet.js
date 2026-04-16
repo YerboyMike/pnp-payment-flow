@@ -277,7 +277,8 @@ async function checkAccess() {
             return await res.json();
         }
 
-        clearAccessToken();
+        // 401 means the cookie is already gone on the server side — no need
+        // to POST /clear-cookie just to re-clear it. Skip the extra request.
         return null;
     } catch (e) {
         console.error('[Wallet] Access check error:', e);

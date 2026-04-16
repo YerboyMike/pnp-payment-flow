@@ -23,11 +23,42 @@ function trackPaymentStep(step, data) {
     // Future: send to /api/analytics/payment-step for server-side tracking
 }
 
-// Fetch pricing from backend and update all displayed prices
+// Lazy-load solana-web3.min.js only when actually needed.
+// The bundle is ~464 KB; loading it on every page tax-hits users who
+// never hit the pay-with-crypto path. Each caller awaits the same
+// Promise so concurrent flows only ever inject one <script> tag.
+let _solanaWeb3Loading = null;
+function loadSolanaWeb3() {
+    if (typeof solanaWeb3 !== 'undefined') return Promise.resolve();
+    if (_solanaWeb3Loading) return _solanaWeb3Loading;
+    _solanaWeb3Loading = new Promise(function(resolve, reject) {
+        const script = document.createElement('script');
+        script.src = '/js/vendor/solana-web3.min.js';
+        script.onload = resolve;
+        script.onerror = function() {
+            _solanaWeb3Loading = null;
+            reject(new Error('Failed to load solana-web3'));
+        };
+        document.head.appendChild(script);
+    });
+    return _solanaWeb3Loading;
+}
+
+// Fetch pricing from backend and update all displayed prices.
+// Cached in sessionStorage so cross-page navigation doesn't re-fetch.
 async function loadPricing() {
     try {
+        const cached = sessionStorage.getItem('pnp_pricing');
+        if (cached) {
+            cachedPricing = JSON.parse(cached);
+            window.__pnpPricingData = cachedPricing;
+            updateDisplayedPrices();
+            return;
+        }
         const res = await fetch(`${PNP_API}/api/payments/pricing`);
         cachedPricing = await res.json();
+        window.__pnpPricingData = cachedPricing;
+        sessionStorage.setItem('pnp_pricing', JSON.stringify(cachedPricing));
         updateDisplayedPrices();
     } catch (e) {
         console.warn('[Pricing] Failed to load pricing:', e);
@@ -169,11 +200,14 @@ function showPaymentModal(tool) {
     trackPaymentStep('modal_opened', { tool });
 
     // Update tool name in modal
-    const toolNames = { bank: 'Bank Processor', labeler: 'Smart Labeler', tis: 'TIS Generator', 'sales-tax': 'Sales Tax Helper' };
+    const toolNames = { bank: 'Bank Processor', labeler: 'Smart Labeler', tis: 'TIS Generator', 'sales-tax': 'Sales Tax Helper', reconcile: 'AI Workbook Reconciliation' };
     const toolDisplayName = toolNames[tool] || tool;
     const toolNameEl = modal.querySelector('.payment-tool-name');
     if (toolNameEl) {
-        toolNameEl.textContent = toolDisplayName;
+        // Respect an explicit data-display-name override on the element
+        // (lets pages like /reconcile show a friendlier label).
+        const customName = toolNameEl.getAttribute('data-display-name');
+        toolNameEl.textContent = customName || toolDisplayName;
     }
 
     // Update plan dropdown with actual tool name
@@ -325,8 +359,11 @@ async function handlePaymentConnect() {
 async function handleSolPayment(isBundle) {
     if (paymentProcessing) return;
 
-    if (typeof solanaWeb3 === 'undefined') {
-        showPaymentStatus('error', 'Solana library not loaded. Please refresh the page.');
+    try {
+        showPaymentStatus('pending', 'Loading Solana library...');
+        await loadSolanaWeb3();
+    } catch (e) {
+        showPaymentStatus('error', 'Failed to load Solana library. Please refresh the page.');
         return;
     }
 
@@ -463,8 +500,11 @@ async function handleSplPayment(tokenKey, isBundle) {
     if (paymentProcessing) return;
     trackPaymentStep('payment_started', { currency: tokenKey.toUpperCase(), isBundle, qty: getRunsQty() });
 
-    if (typeof solanaWeb3 === 'undefined') {
-        showPaymentStatus('error', 'Solana library not loaded. Please refresh the page.');
+    try {
+        showPaymentStatus('pending', 'Loading Solana library...');
+        await loadSolanaWeb3();
+    } catch (e) {
+        showPaymentStatus('error', 'Failed to load Solana library. Please refresh the page.');
         return;
     }
 
